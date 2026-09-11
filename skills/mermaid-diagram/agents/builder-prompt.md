@@ -54,17 +54,34 @@ Other HTML tags (`<b>`, `<i>`, etc.) still render as literal text or break the p
 ### 5. Explicit palette-based styling is required
 Use `classDef` and `class` to assign nodes into visual groups. Mermaid is exported to SVG via `mmdc`, so the theme is baked into the output and the old dark-mode concern no longer applies. Styling is required because it carries structure in the exported diagram.
 
-Use this fixed 5-slot palette for flowcharts and other node-based diagrams:
+Use the **Snowflake brand palette**. Snowflake Blue `#29B5E8` and Mid-Blue
+`#11567F` are the primary colours and carry the diagram; the secondary colours
+(Star Blue `#75CDD7`, Valencia Orange `#FF9F36`, Purple Moon `#7254A3`, First
+Light `#D45B90`) are used **very sparingly** — one accent per stage, never as a
+decorative rainbow.
 
-| Slot | Class name | Fill | Stroke | Use for |
+Each slot pairs a pale tint fill with the full-strength brand colour as stroke:
+
+| Slot | Fill | Stroke | Brand name | Use for |
 |---|---|---|---|---|
-| 1 | `sourceStyle` | `#E8F0FE` | `#4285F4` | Sources, inputs, upstream |
-| 2 | `streamStyle` | `#FFF4E5` | `#FF9800` | Streaming, queues, transport |
-| 3 | `ingestStyle` | `#F3E8FD` | `#9C27B0` | Ingestion, connectors, middleware |
-| 4 | `coreStyle` | `#E6F7F1` | `#2DBD8E` | Snowflake, core platform |
-| 5 | `consumerStyle` | `#FFF9E5` | `#FBC02D` | Consumers, outputs, downstream |
+| 1 | `#D6EFFA` | `#11567F` | Mid-Blue | Sources, providers, upstream |
+| 2 | `#E9F7FD` | `#29B5E8` | Snowflake Blue | Core platform, the main path |
+| 3 | `#EDE7F5` | `#7254A3` | Purple Moon | Movement, replication, transport |
+| 4 | `#E4F6F8` | `#75CDD7` | Star Blue | Landing zones, consumer side |
+| 5 | `#FFF1E0` | `#FF9F36` | Valencia Orange | Outputs, downstream consumption |
 
-All classes must also include `stroke-width:2px,color:#1a1a2e`.
+All classes must also include `stroke-width:2px,color:#000000`.
+
+Give subgraphs a near-white Snowflake tint so the node fills stay legible on top
+of them, and use Mid-Blue for the group title:
+
+```
+style groupId fill:#F5FBFE,stroke:#29B5E8,stroke-width:2px,color:#11567F
+```
+
+Always write fill, stroke and `color` explicitly. That is what makes the diagram
+theme-independent: rendered on a dark background the chrome adapts but every
+node, label and arrow stays readable.
 
 - Correct: define shared classes with `classDef`, then assign them with `class`
 - Wrong: leave all nodes unstyled in a diagram that has distinct groups
@@ -94,11 +111,14 @@ flowchart LR
     Staging --> Curated
     Staging -.->|monitor| DMF["Data Quality DMFs"]
 
-    classDef sourceStyle fill:#E8F0FE,stroke:#4285F4,stroke-width:2px,color:#1a1a2e
-    classDef coreStyle fill:#E6F7F1,stroke:#2DBD8E,stroke-width:2px,color:#1a1a2e
+    classDef sourceStyle fill:#D6EFFA,stroke:#11567F,stroke-width:2px,color:#000000
+    classDef coreStyle fill:#E9F7FD,stroke:#29B5E8,stroke-width:2px,color:#000000
 
     class OLTP,AppLogs sourceStyle
     class Staging,Curated,DMF coreStyle
+
+    style sources fill:#F5FBFE,stroke:#11567F,stroke-width:2px,color:#11567F
+    style snowflake fill:#F5FBFE,stroke:#29B5E8,stroke-width:2px,color:#11567F
 ```
 
 ### 6. Subgraph syntax requires an ID
@@ -215,13 +235,13 @@ For a 4+ group pipeline:
 title: Ingestion Pipeline
 ---
 flowchart TB
-    subgraph sources["1 &nbsp; SOURCES"]
+    subgraph sources["1  SOURCES"]
         direction LR
         Db["OLTP Database<br/><small>CDC capture</small>"]
         Logs["Application Logs"]
     end
 
-    subgraph platform["2 &nbsp; SNOWFLAKE"]
+    subgraph platform["2  SNOWFLAKE"]
         direction LR
         Staging["Staging Tables<br/><small>raw layer</small>"]
         Curated["Curated Layer<br/><small>gold</small>"]
@@ -252,26 +272,97 @@ Practical consequences:
 - **Control height by group size, not direction.** Aim for 2–4 nodes per group. A group with 6 nodes becomes 6 stacked rows and inflates total height.
 - **Expect unused horizontal space** beside small groups. That is a Mermaid auto-layout limitation, not something to fix by restructuring — a diagram that reads correctly with white space beside it is better than a contorted one.
 
-### Draw stage-to-stage edges node to node
+### Route every cross-group edge through one hub node per group
 
-Connect the last node of one group to the first node of the next. Do not draw edges to or from a subgraph ID:
+Edges must be node-to-node. Never draw them to a subgraph ID — `kafka ==> ingestion`
+attaches to the group container and routes vaguely.
+
+But *which* nodes you pick decides whether the diagram is a clean spine or a
+diagonal mess. Two failure modes, both measured:
+
+**Trap 1 — asymmetric endpoints cause a staircase.** If each edge leaves a
+group's *right* node and enters the next group's *left* node, every group shifts
+one node-width rightward, cumulatively. A 5-group diagram cascades diagonally and
+leaves a large empty triangle.
+
+**Trap 2 — an internal edge stacks the pair.** Because a boundary-crossing edge
+kills inner `direction` (above), two nodes joined by an internal edge become two
+stacked rows. Ten nodes collapsed into a single 574 × 1642 ribbon this way, with
+the entire horizontal axis wasted.
+
+**The pattern that works — hub and companion:**
+
+1. Give each group **one hub node** that carries *both* the inbound and the
+   outbound cross-boundary edge.
+2. List the hub **first** so it takes the left position; the companion node sits
+   beside it.
+3. Draw **no internal edge** between hub and companion.
+
+All hubs then land in one column: a straight vertical spine with every group
+left-aligned. Measured on a 5-group diagram — all five hubs at exactly
+`cx=162.19`, rows pitched exactly 202px apart, aspect ratio 0.58.
 
 ```
-    Topic -->|"consume"| SinkConnector
-    StreamingSdk -->|"ingest"| Staging
+    subgraph publish["2  PUBLISH"]
+        direction LR
+        Listing["Private Listing"]     %% hub — listed first
+        Share["Secure Share"]          %% companion — no edge to Listing
+    end
+
+    ProdDb --> Listing      %% inbound  → hub
+    Listing ==> Replicate   %% outbound ← same hub
 ```
 
-Not `kafka ==> ingestion`. Edges to a subgraph ID attach to the group container, which produces vaguer routing and worse spacing than a node-to-node edge. Neither form preserves inner `direction` — see above.
+`~~~` does **not** solve the pairing problem. An invisible link is still a rank
+relationship, so the nodes stack exactly as a visible edge would. The pair must
+have *no* connection at all to share a rank.
+
+Choosing the hub is an editorial decision, not just a layout one: the inbound
+arrow lands on it, so the hub reads as the group's entry point. If that misstates
+the real build order, either accept it or split the group into two stages — but
+say which you chose and why.
+
+### Equalize label lengths to align box edges
+
+**Mermaid has no node-width property.** A node is sized to its own text, and
+dagre centres it on its rank. So centres align perfectly while left and right
+edges scatter — visible as ragged columns even in a mathematically exact spine.
+
+Width is driven by whichever line is wider: the title at normal size (~8.5px per
+character) or the subtitle at `<small>` size (~6.2px per character). The only
+lever is the character count of that driving line.
+
+Keep the driving line within a few characters across nodes that share a column.
+Measured effect on a 5-group diagram: hub left edges spread **42.23px before**
+label tuning (widest label 238px, narrowest 154px) and **10.81px after** — under
+2% of the diagram width, which reads as aligned.
+
+Choose wording of comparable length while keeping the meaning exact; do not pad
+with filler and never contort a label to serve the layout. `"provider-owned"` →
+`"provider-owned database"` is a legitimate edit. Raggedness can be reduced this
+way but not eliminated — say so rather than claiming uniform widths.
 
 ### Keep subgraph titles short
 
 A subgraph is only as wide as its widest node. **If the title is longer than the group is wide, it wraps and gets clipped by the group border.** This is a silent failure — the title is simply cut off in the render.
 
-Keep titles to roughly 20 characters including the stage number. `"1 &nbsp; REGION A — HUB"` fits; `"1 &nbsp; REGION A — HUB ACCOUNT (multi-tenant)"` renders as `1 REGION A — HUB ACCOUNT (mu`. Move the qualifying detail into the surrounding prose or a node label instead.
+Keep titles to roughly **20 characters** including the stage number. `"1  REGION A — HUB"` fits; `"1  REGION A — HUB ACCOUNT (multi-tenant)"` renders as `1 REGION A — HUB ACCOUNT (mu`. Move the qualifying detail into the surrounding prose or a node label instead.
+
+Budget for the **stricter** of the two text measurers. When a viewer has
+`htmlLabels: false`, Mermaid measures with SVG text metrics and wraps earlier
+than the default HTML path — and the wrapped second line collides with the node
+beneath it. A title that fits the default render can still break there.
+Measured: 26 characters wrapped, 20 fitted.
 
 ### Number the stages
 
-In a stacked layout, prefix each subgraph label with its stage number so the reading order is unambiguous: `subgraph sources["1 &nbsp; SOURCES"]`. Use `&nbsp;` for spacing — plain spaces collapse.
+In a stacked layout, prefix each subgraph label with its stage number so the reading order is unambiguous: `subgraph sources["1  SOURCES"]`. Separate the number from the text with **two plain spaces**.
+
+**Never use HTML entities in a label.** `&nbsp;` does not survive
+`htmlLabels: false` — it renders as the literal string `&nbsp;`, and it also
+consumes about seven characters of the title width budget, causing titles to
+wrap that would otherwise fit. `<br/>` and `<small>` are safe: both degrade
+gracefully when HTML labels are off.
 
 ### Snowflake brand icons — only when supplied
 

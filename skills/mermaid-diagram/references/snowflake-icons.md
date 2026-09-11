@@ -89,16 +89,19 @@ default purple border. Apply the standard palette exactly as for plain nodes:
 
 ```
 flowchart TB
-    subgraph provider["1 &nbsp; PROVIDER"]
+    subgraph provider["1  PROVIDER"]
         direction LR
         Db@{ img: "/abs/path/assets/icons/snowflake_database.png", label: "Multi-Tenant DB", pos: "b", w: 70, h: 70 }
         Dt@{ img: "/abs/path/assets/icons/table_dynamic.png", label: "Dynamic Table", pos: "b", w: 70, h: 70 }
-        Db --> Dt
     end
 
-    classDef sf fill:#E6F7F1,stroke:#2DBD8E,stroke-width:2px,color:#1a1a2e
+    classDef sf fill:#E9F7FD,stroke:#29B5E8,stroke-width:2px,color:#000000
     class Db,Dt sf
 ```
+
+Note there is deliberately **no edge between `Db` and `Dt`**. An internal edge
+would stack them vertically once anything connects to this group from outside —
+see the hub-and-companion rule in the builder prompt.
 
 ---
 

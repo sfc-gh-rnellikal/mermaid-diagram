@@ -9,7 +9,7 @@ These rules apply to every diagram type:
 1. **No spaces in node/participant IDs** — IDs must be single tokens
 2. **Never use reserved keywords as IDs** — `end`, `subgraph`, `graph`, `flowchart`, `direction`
 3. **Use `<br/>` for multi-line labels, never `\n`** — `\n` renders as literal text in SVG; `<br/>` renders as a real line break. Other HTML tags (`<b>`, `<i>`) still render as literal text — avoid them.
-4. **Use palette-based `classDef` styling** — assign major node groups with shared `classDef` and `class` rules. Use up to five groups: `#E8F0FE/#4285F4` for sources, `#FFF4E5/#FF9800` for streaming, `#F3E8FD/#9C27B0` for ingestion, `#E6F7F1/#2DBD8E` for Snowflake or core platform, and `#FFF9E5/#FBC02D` for consumers. All classes use `stroke-width:2px,color:#1a1a2e`.
+4. **Use the Snowflake brand palette via `classDef`** — assign major node groups with shared `classDef` and `class` rules. Up to five slots, each a pale tint over the full-strength brand stroke: `#D6EFFA/#11567F` Mid-Blue for sources and providers, `#E9F7FD/#29B5E8` Snowflake Blue for the core platform, `#EDE7F5/#7254A3` Purple Moon for replication and transport, `#E4F6F8/#75CDD7` Star Blue for the consumer side, `#FFF1E0/#FF9F36` Valencia Orange for downstream outputs. All classes use `stroke-width:2px,color:#000000`. Snowflake Blue and Mid-Blue carry the diagram; the other three are accents used sparingly. Give subgraphs `fill:#F5FBFE` with a `color:#11567F` title.
 5. **Quote edge labels with special characters** — parentheses, slashes, colons, commas
 
 ## Subgraph / Grouping Patterns
@@ -32,6 +32,42 @@ flowchart LR
     Snowpipe --> RawDB
     RawDB --> CuratedDB
 ```
+
+### Stacked Stages — hub and companion (preferred for pipelines)
+
+For a multi-stage pipeline, give each group one **hub** node carrying both the
+inbound and outbound edge, listed first, with **no internal edge** to its
+companion. All hubs land in one column, producing a straight vertical spine with
+every group left-aligned.
+
+```mermaid
+flowchart TB
+    subgraph provider["1  PROVIDER REGION"]
+        direction LR
+        ProdDb["PROD_DB<br/><small>provider-owned database</small>"]
+        SourceTbl["Source Tables<br/><small>CHANGE_TRACKING = TRUE</small>"]
+    end
+
+    subgraph publish["2  PUBLISH"]
+        direction LR
+        Listing["Private Listing<br/><small>auto-fulfillment enabled</small>"]
+        Share["Secure Share<br/><small>backs the private listing</small>"]
+    end
+
+    ProdDb -->|"grant objects to share"| Listing
+
+    classDef slot1 fill:#D6EFFA,stroke:#11567F,stroke-width:2px,color:#000000
+    classDef slot2 fill:#E9F7FD,stroke:#29B5E8,stroke-width:2px,color:#000000
+    class ProdDb,SourceTbl slot1
+    class Listing,Share slot2
+
+    style provider fill:#F5FBFE,stroke:#11567F,stroke-width:2px,color:#11567F
+    style publish fill:#F5FBFE,stroke:#29B5E8,stroke-width:2px,color:#11567F
+```
+
+Adding `ProdDb --> SourceTbl` here would stack that pair into two rows and break
+the spine. Note also that the subtitle lengths are within a few characters of one
+another — that is what keeps the box edges aligned.
 
 ### Nested Subgraphs
 
