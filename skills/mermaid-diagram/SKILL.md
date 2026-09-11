@@ -260,6 +260,32 @@ cd "{target_dir}" && mmdc -i "{slug}.mmd" -o "{slug}.svg"
 
 If the command exits non-zero, surface the error to the user and stop. Do not proceed to `.md` injection.
 
+### Box normalization — mandatory for flowcharts
+
+Mermaid sizes every node to its own text and offers no node-width property, so
+peer nodes doing the same job come out at different widths. Measured on a
+five-stage flowchart: box widths 203.73–228.52px, aspect ratios 2.61–2.93, and
+group rects 530.62–561.19px wide. The diagram reads as sloppy even when the
+node centres are mathematically exact.
+
+Author-side label tuning narrows the spread but cannot close it. Run this pass to
+square up the geometry:
+
+```bash
+python3 "SKILL_DIR/scripts/normalize-boxes.py" "{target_dir}/{slug}.svg"
+```
+
+It sets every node rect to one width centred on its origin, squares up node
+columns, and gives every group rect a common x and width with its title
+re-centred. Columns an edge terminates on are left where they are, so baked edge
+paths never end up dangling. The pass is idempotent and works on both the default
+HTML-label path and `htmlLabels: false`.
+
+Do not try to do this with `themeCSS`. It is applied to the live DOM only — it
+changes a rasterized PNG but never reaches the exported SVG, and Mermaid strips
+it from frontmatter `config:` as unsafe. The geometry has to be written into the
+attributes after the fact.
+
 ### Icon inlining — mandatory when icons are used
 
 Skip this if the diagram uses no icons.

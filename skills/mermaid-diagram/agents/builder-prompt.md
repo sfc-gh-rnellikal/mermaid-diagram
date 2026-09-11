@@ -342,6 +342,13 @@ with filler and never contort a label to serve the layout. `"provider-owned"` �
 `"provider-owned database"` is a legitimate edit. Raggedness can be reduced this
 way but not eliminated — say so rather than claiming uniform widths.
 
+Exact uniformity is a **post-processing** concern, not something to chase in the
+source. `scripts/normalize-boxes.py` rewrites the geometry attributes after
+`mmdc` runs and takes every box to one size (measured: 232 × 78 for all ten nodes,
+a single aspect ratio of 2.97, and 0.00px left-edge spread in both columns). Your
+job is to keep labels close in length so the normalized width is not dominated by
+one outlier; the script handles the rest.
+
 ### Keep subgraph titles short
 
 A subgraph is only as wide as its widest node. **If the title is longer than the group is wide, it wraps and gets clipped by the group border.** This is a silent failure — the title is simply cut off in the render.
