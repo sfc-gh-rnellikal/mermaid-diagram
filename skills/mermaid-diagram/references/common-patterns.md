@@ -8,7 +8,7 @@ These rules apply to every diagram type:
 
 1. **No spaces in node/participant IDs** — IDs must be single tokens
 2. **Never use reserved keywords as IDs** — `end`, `subgraph`, `graph`, `flowchart`, `direction`
-3. **No HTML tags in labels** — `<br/>`, `<b>`, `<i>` render as literal text
+3. **Use `<br/>` for multi-line labels, never `\n`** — `\n` renders as literal text in SVG; `<br/>` renders as a real line break. Other HTML tags (`<b>`, `<i>`) still render as literal text — avoid them.
 4. **No explicit colors or styles** — `style`, `classDef fill:`, `:::className` break in dark mode
 5. **Quote edge labels with special characters** — parentheses, slashes, colons, commas
 

@@ -43,11 +43,13 @@ If an edge label contains parentheses, slashes, colons, or other special charact
 - Wrong: `A -->|POST /api/login| B`
 - Wrong: `A -->|if valid (200 OK)| B`
 
-### 4. Never use HTML tags in labels
-`<br/>`, `<b>`, `<i>` and other HTML tags render as literal text or break the parser.
+### 4. Use `<br/>` for multi-line labels — never use `\n`
+`<br/>` is the correct way to break a line inside a node label when rendered via `mmdc` to SVG. `\n` renders as **literal text** (the characters `\n`) in SVG output, not a line break.
 
-- Correct: Use a second line or keep the label short
-- Wrong: `Node["Line 1<br/>Line 2"]`
+Other HTML tags (`<b>`, `<i>`, etc.) still render as literal text or break the parser — avoid them.
+
+- Correct: `Node["Line 1<br/>Line 2"]`
+- Wrong: `Node["Line 1\nLine 2"]` (produces `Line 1\nLine 2` as literal text in SVG)
 
 ### 5. Do not apply explicit colors or styles
 Never use `style`, `classDef`, `fill:`, `stroke:`, or `:::className` syntax. These break in dark mode. Let the renderer apply its default theme.
