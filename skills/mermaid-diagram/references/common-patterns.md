@@ -9,7 +9,7 @@ These rules apply to every diagram type:
 1. **No spaces in node/participant IDs** — IDs must be single tokens
 2. **Never use reserved keywords as IDs** — `end`, `subgraph`, `graph`, `flowchart`, `direction`
 3. **Use `<br/>` for multi-line labels, never `\n`** — `\n` renders as literal text in SVG; `<br/>` renders as a real line break. Other HTML tags (`<b>`, `<i>`) still render as literal text — avoid them.
-4. **No explicit colors or styles** — `style`, `classDef fill:`, `:::className` break in dark mode
+4. **Use palette-based `classDef` styling** — assign major node groups with shared `classDef` and `class` rules. Use up to five groups: `#E8F0FE/#4285F4` for sources, `#FFF4E5/#FF9800` for streaming, `#F3E8FD/#9C27B0` for ingestion, `#E6F7F1/#2DBD8E` for Snowflake or core platform, and `#FFF9E5/#FBC02D` for consumers. All classes use `stroke-width:2px,color:#1a1a2e`.
 5. **Quote edge labels with special characters** — parentheses, slashes, colons, commas
 
 ## Subgraph / Grouping Patterns
@@ -90,7 +90,7 @@ sequenceDiagram
 
 ### Flowchart Comment Notes
 
-Mermaid flowcharts don't have a native note block, but you can use a styled node as a visual note. Since explicit styles break dark mode, use a descriptive label with a rectangle node and a dashed edge to convey annotation:
+Mermaid flowcharts don't have a native note block, but you can use a descriptive rectangle node and a dashed edge to convey annotation. Assign it with the same palette-based `classDef` approach as the rest of the diagram:
 
 ```mermaid
 flowchart TD

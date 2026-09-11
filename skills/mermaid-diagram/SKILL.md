@@ -1,6 +1,6 @@
 ---
 name: mermaid-diagram
-version: "1.1"
+version: "1.2"
 authors:
   - name: Ratheesh Nellikal
 description: "Generate Mermaid diagrams from natural language using a 3-agent pipeline (Analyst → Builder → Validator with auto-retry). Use when: creating flowcharts, architecture diagrams, sequence diagrams, ER schemas, data pipelines, class diagrams. Renders directly in .md files and CoCo presentations. Triggers: diagram, flowchart, architecture diagram, sequence diagram, flow, draw, visualize system, ER diagram, class diagram, data pipeline diagram, mermaid, create a diagram, make a diagram."
@@ -20,6 +20,8 @@ Converts a natural language description into a validated Mermaid diagram using t
 | Agent prompts | `SKILL_DIR/agents/` |
 | Syntax references | `SKILL_DIR/references/` |
 | Templates | `SKILL_DIR/templates/` |
+| Snowflake brand icons | `SKILL_DIR/assets/icons/` (registry: `references/snowflake-icons.md`) |
+| Post-processing scripts | `SKILL_DIR/scripts/` |
 | Max retry iterations | 3 |
 | Output | SVG file + image reference injected into target `.md` |
 
@@ -91,6 +93,27 @@ Based on `diagram_type` from the brief, load the matching reference file from SK
 Read the relevant reference file. You will pass its contents to the Builder agent.
 
 Also check if a matching template exists in `SKILL_DIR/templates/` for the diagram type and load it too if present. Templates are working examples the Builder can use for structural guidance.
+
+---
+
+## Step 2b — Snowflake brand icons (opt-in)
+
+Diagrams default to plain styled nodes. Official Snowflake icons are available but are **never applied automatically** — using them changes the render pipeline (an extra post-processing step) and constrains labels, so it has to be a deliberate choice.
+
+Use icons when **either**:
+- The user explicitly asks for them ("use the Snowflake icons", "brand this", "use the template icons"), **or**
+- The diagram is Snowflake-specific *and* the user has opted in earlier in the conversation.
+
+If the diagram is clearly Snowflake architecture and the user has not expressed a preference, ask once with `ask_user_question`:
+- "Use official Snowflake brand icons for the Snowflake objects, or plain styled boxes?"
+  - "Brand icons" — description: "Official icons from the Snowflake template for databases, dynamic tables, warehouses etc."
+  - "Plain boxes" — description: "Current default. Shorter pipeline, labels can be longer."
+
+Do not ask this for non-Snowflake diagrams — there are no icons for them.
+
+**If icons are in use:** read `references/snowflake-icons.md` and pass its full contents to the Builder alongside the syntax reference. It carries the registry, the image-shape syntax, and the label constraints. Resolve `SKILL_DIR` to an absolute path before passing it, because `img:` paths must be absolute at render time.
+
+**If icons are not in use:** skip this step entirely and do not mention it.
 
 ---
 
@@ -237,6 +260,43 @@ cd "{target_dir}" && mmdc -i "{slug}.mmd" -o "{slug}.svg"
 
 If the command exits non-zero, surface the error to the user and stop. Do not proceed to `.md` injection.
 
+### Icon inlining — mandatory when icons are used
+
+Skip this if the diagram uses no icons.
+
+`mmdc` writes image shapes as `href="/absolute/path/icon.png"` with `preserveAspectRatio="none"`. The absolute path does not survive the SVG being moved or shared and markdown previews generally refuse to load it; the forced aspect ratio stretches each icon to a box that was sized from the label. Both must be corrected:
+
+```bash
+python3 "SKILL_DIR/scripts/inline-icons.py" "{target_dir}/{slug}.svg"
+```
+
+Then confirm no filesystem references survive:
+
+```bash
+grep -c 'href="/' "{target_dir}/{slug}.svg"
+```
+
+This must print `0`. If it prints anything else, an `img:` path was wrong — the icons will render broken. Fix the path in `{slug}.mmd`, re-run `mmdc`, and re-run the inliner before continuing.
+
+### Aspect ratio check — mandatory
+
+Exported SVGs carry `width="100%"` and scale to their container, so an over-wide diagram shrinks its own text into illegibility. Verify the rendered aspect ratio before injecting:
+
+```bash
+grep -o 'viewBox="[^"]*"' "{target_dir}/{slug}.svg" | head -1
+```
+
+The viewBox is `min-x min-y width height`. Divide width by height.
+
+If the ratio exceeds **2.5**, the diagram will not be readable at normal markdown width. Do not inject it. Instead:
+
+1. Rebuild the diagram as `flowchart TB` so the groups stack vertically — this is the only reliable lever on aspect ratio. See the layout-direction rules in `agents/builder-prompt.md`
+2. Reduce nodes per group to 2–4. Inner `direction LR` will not spread them horizontally once a group has any edge crossing its boundary, so each extra node adds a row of height
+3. Keep stage-to-stage edges node to node, never to a subgraph ID
+4. Re-render and re-check
+
+If the ratio is still above 2.5 after restructuring, tell the user the diagram has too many parallel stages to render legibly in one image and offer to split it into two diagrams.
+
 Inject the image reference into markdown:
 
 - If the user chose Option A, write a new `{md_path}` containing:
@@ -273,7 +333,7 @@ For quick classification when the Analyst's type differs from what you expected:
 |---|---|
 | flow, process, steps, if/else, decision | `flowchart` |
 | API call, request/response, message, auth, token exchange | `sequenceDiagram` |
-| cloud, AWS, Azure, GCP, services, infrastructure, platform | `architecture-beta` |
+| cloud, AWS, Azure, GCP, services, infrastructure, platform | `flowchart LR (styled)` |
 | database, table, schema, foreign key, entity, ER | `erDiagram` |
 | class, object, inheritance, interface, UML | `classDiagram` |
 

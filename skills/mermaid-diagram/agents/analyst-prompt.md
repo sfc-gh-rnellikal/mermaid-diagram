@@ -36,9 +36,11 @@ Choose based on what the diagram is describing, not the words the user uses:
 |---|---|
 | Steps in a process, decision points, yes/no branches, if/else logic, approval workflows | `flowchart` |
 | Messages sent between systems, API calls, request/response cycles, event sequences, auth flows | `sequenceDiagram` |
-| Cloud services, infrastructure components, Snowflake, AWS/Azure/GCP resources, microservices without explicit message ordering | `architecture-beta` |
+| Cloud services, infrastructure components, Snowflake, AWS/Azure/GCP resources, microservices without explicit message ordering | `flowchart` with `direction: LR` |
 | Database tables, entities, primary/foreign keys, cardinality | `erDiagram` |
 | Classes, objects, inheritance, interfaces, methods, UML | `classDiagram` |
+
+Use `architecture-beta` only when the user explicitly asks for `architecture-beta` by name.
 
 If the user says "flowchart" but the content describes ordered API messages, classify as `sequenceDiagram`. Classification is based on content, not vocabulary.
 
@@ -51,6 +53,10 @@ If the user says "flowchart" but the content describes ordered API messages, cla
 | Bottom-to-top reporting, aggregation upward | `BT` |
 
 Default to `TD` when uncertain.
+
+**Override for 4 or more groupings.** Count the entries you will put in `groupings`. If there are 4 or more, set `direction` to `TD` even for a left-to-right pipeline. A diagram with 4+ groups laid out horizontally renders as an unreadably wide strip once exported to SVG; the Builder stacks the groups vertically instead. Record the conceptual flow in `notes` (for example, "logical left-to-right pipeline, stacked vertically for readability") so the Builder keeps the ordering right.
+
+**Keep groupings to 2–4 components each.** Nodes inside a group stack vertically in the render — Mermaid ignores a subgraph's inner direction as soon as any edge crosses its boundary, which is true of every connected stage. So each component you add to a group adds height. If a stage genuinely has 6+ components, either split it into two groupings or drop the incidental ones, and note the choice in `notes`.
 
 ---
 
@@ -143,7 +149,7 @@ Do NOT list style preferences or optional additions as ambiguities. Only list st
 ### Expected output
 ```json
 {
-  "diagram_type": "architecture-beta",
+  "diagram_type": "flowchart",
   "direction": "LR",
   "components": ["S3", "Snowpipe", "RawSchema", "DynamicTables", "CuratedSchema", "Tableau", "PowerBI"],
   "relationships": [
@@ -159,3 +165,5 @@ Do NOT list style preferences or optional additions as ambiguities. Only list st
   "ambiguities": []
 }
 ```
+
+Note that this is an infrastructure diagram but classifies as `flowchart` with `direction: LR` — not `architecture-beta`. Styled `flowchart LR` with subgraphs renders far more cleanly. Only use `architecture-beta` when the user names it explicitly.
