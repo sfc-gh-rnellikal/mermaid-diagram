@@ -178,6 +178,8 @@ def main():
         )
     }
 
+    widened = []
+
     def fix_cluster(m):
         old_x = float(re.search(r'\bx="([-\d.]+)"', m.group('rattrs')).group(1))
         old_w = float(re.search(r'\bwidth="([-\d.]+)"', m.group('rattrs')).group(1))
@@ -185,6 +187,7 @@ def main():
         if m.group('id') not in solo_ids:
             return m.group(0)
 
+        widened.append(m.group('id'))
         rattrs = RECT_ATTR_RE.sub(
             lambda a: f'{a.group("key")}="{cl_x if a.group("key") == "x" else cl_w}"',
             m.group('rattrs'),
@@ -204,11 +207,19 @@ def main():
             )
         )
 
-    svg, n_clusters = CLUSTER_RE.subn(fix_cluster, svg)
+    svg, n_matched = CLUSTER_RE.subn(fix_cluster, svg)
+    # Report groups actually widened, not groups matched. subn counts every match
+    # even though fix_cluster returns side-by-side siblings untouched, so the
+    # match count would claim a merge that did not happen -- and would equally
+    # hide one that did.
+    skipped = n_matched - len(widened)
+    summary = f'{len(widened)} of {n_matched} groups widened'
+    if skipped:
+        summary += f' ({skipped} left alone, side by side)'
 
     print(f'normalize-boxes: {len(nodes)} nodes -> width {target_w:g}, '
-          f'{len(moves)} repositioned, {n_clusters} groups -> '
-          f'x {cl_x:.2f} width {cl_w:.2f}')
+          f'{len(moves)} repositioned, {summary}'
+          + (f' -> x {cl_x:.2f} width {cl_w:.2f}' if widened else ''))
     if args.dry_run:
         print('normalize-boxes: --dry-run, file not written')
         return 0
