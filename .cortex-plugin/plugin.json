@@ -1,0 +1,6 @@
+{
+  "name": "mermaid-diagram",
+  "description": "Generate Mermaid diagrams from natural language using a 3-agent pipeline (Analyst → Builder → Validator with auto-retry). Renders directly in .md files and CoCo presentations.",
+  "version": "1.0.0",
+  "author": "Ratheesh Nellikal"
+}
