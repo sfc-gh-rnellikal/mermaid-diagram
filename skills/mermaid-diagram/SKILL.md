@@ -275,11 +275,28 @@ square up the geometry:
 python3 "SKILL_DIR/scripts/normalize-boxes.py" "{target_dir}/{slug}.svg"
 ```
 
-It sets every node rect to one width centred on its origin, squares up node
-columns, and gives every group rect a common x and width with its title
-re-centred. Columns an edge terminates on are left where they are, so baked edge
-paths never end up dangling. The pass is idempotent and works on both the default
-HTML-label path and `htmlLabels: false`.
+It sets every node rect to one width centred on its origin, and gives stacked
+group rects a common x and width with their titles re-centred. The pass is
+idempotent and works on both the default HTML-label path and `htmlLabels: false`.
+
+**Groups that sit side by side are left alone.** Sibling subgraphs on the same
+rank share a vertical band; giving them a common x and width slams them on top of
+each other and one border disappears completely, so the two groups read as one.
+The pass only widens a group that is alone in its band. Verified against a
+diagram with two sibling CX-managed account groups: both keep their own geometry
+while the four stacked groups are squared up.
+
+Add `--square-columns` to also snap node columns to a common x:
+
+```bash
+python3 "SKILL_DIR/scripts/normalize-boxes.py" "{target_dir}/{slug}.svg" --square-columns
+```
+
+This is **opt-in** and only appropriate for a clean two-column layout such as the
+hub-and-companion pattern, where it takes column spread to 0.00px. Column
+detection is by x-proximity, so on a wide multi-column graph it can merge columns
+that should stay distinct. Nodes an edge terminates on are never moved either
+way, so baked edge paths cannot be left dangling.
 
 Do not try to do this with `themeCSS`. It is applied to the live DOM only — it
 changes a rasterized PNG but never reaches the exported SVG, and Mermaid strips

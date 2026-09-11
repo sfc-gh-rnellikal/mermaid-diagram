@@ -92,6 +92,11 @@ def main():
     ap.add_argument('svg')
     ap.add_argument('--pad', type=float, default=28.0,
                     help='horizontal padding between group border and node edge')
+    ap.add_argument('--square-columns', action='store_true',
+                    help='also snap node columns to a common x. Only safe when '
+                         'the diagram has clean, well-separated columns; column '
+                         'detection is by x-proximity and can merge distinct '
+                         'columns in wide multi-column graphs.')
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
 
@@ -121,9 +126,10 @@ def main():
         # An anchored column must keep its x or the baked edge paths break.
         target_cx = anchored_xs[0] if anchored_xs else max(n['cx'] for n in col)
         for n in col:
-            if not anchored(n) and abs(n['cx'] - target_cx) > 0.01:
+            movable = args.square_columns and not anchored(n)
+            if movable and abs(n['cx'] - target_cx) > 0.01:
                 moves[n['name']] = target_cx
-            n['new_cx'] = target_cx if not anchored(n) else n['cx']
+            n['new_cx'] = target_cx if movable else n['cx']
 
     # Rewrite node rects (and transforms for movable nodes), right to left.
     for n in sorted(nodes, key=lambda n: -n['span'][0]):
@@ -151,9 +157,34 @@ def main():
     right = max(n['new_cx'] for n in nodes) + half + args.pad
     cl_w, cl_x = right - left, left
 
+    # Groups that are alone in their vertical band. Sibling groups laid out side
+    # by side share a y range, and giving them a common x and width would slam
+    # them on top of each other -- they would render as a single box with one
+    # border hidden entirely. Keyed by id, because siblings can have byte
+    # identical y and height and so cannot be told apart by geometry alone.
+    boxes = [
+        (
+            m.group('id'),
+            float(re.search(r'\by="([-\d.]+)"', m.group('rattrs')).group(1)),
+            float(re.search(r'\bheight="([-\d.]+)"', m.group('rattrs')).group(1)),
+        )
+        for m in CLUSTER_RE.finditer(svg)
+    ]
+    solo_ids = {
+        cid
+        for cid, y, h in boxes
+        if not any(
+            oid != cid and y < oy + oh and oy < y + h for oid, oy, oh in boxes
+        )
+    }
+
     def fix_cluster(m):
         old_x = float(re.search(r'\bx="([-\d.]+)"', m.group('rattrs')).group(1))
         old_w = float(re.search(r'\bwidth="([-\d.]+)"', m.group('rattrs')).group(1))
+
+        if m.group('id') not in solo_ids:
+            return m.group(0)
+
         rattrs = RECT_ATTR_RE.sub(
             lambda a: f'{a.group("key")}="{cl_x if a.group("key") == "x" else cl_w}"',
             m.group('rattrs'),
