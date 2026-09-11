@@ -1,5 +1,8 @@
 ---
 name: mermaid-diagram
+version: "1.1"
+authors:
+  - name: Ratheesh Nellikal
 description: "Generate Mermaid diagrams from natural language using a 3-agent pipeline (Analyst → Builder → Validator with auto-retry). Use when: creating flowcharts, architecture diagrams, sequence diagrams, ER schemas, data pipelines, class diagrams. Renders directly in .md files and CoCo presentations. Triggers: diagram, flowchart, architecture diagram, sequence diagram, flow, draw, visualize system, ER diagram, class diagram, data pipeline diagram, mermaid, create a diagram, make a diagram."
 ---
 
@@ -18,7 +21,7 @@ Converts a natural language description into a validated Mermaid diagram using t
 | Syntax references | `SKILL_DIR/references/` |
 | Templates | `SKILL_DIR/templates/` |
 | Max retry iterations | 3 |
-| Output | Fenced `mermaid` code block + one-line explanation |
+| Output | SVG file + image reference injected into target `.md` |
 
 ---
 
@@ -167,7 +170,7 @@ SUGGESTIONS:
 
 ## Step 5 — Loop or Output
 
-**If PASS:** Present the Mermaid diagram to the user (Step 6).
+**If PASS:** Proceed to Step 6.
 
 **If FAIL and iteration < 3:**
 - Increment the iteration counter
@@ -201,19 +204,62 @@ Return to Step 4 with the new output.
 
 ---
 
-## Step 6 — Present Output
+## Step 6 — SVG Export and .md Injection
 
-Present the final Mermaid diagram in a fenced code block:
+After validation passes, ask the user where to insert the diagram. Use `ask_user_question` with both questions in the same call:
+- Question 1 (`options`): "Where should I insert the diagram?"
+  - Option A: "Create a new .md file" — description: "A new {slug}.md will be created in the current working directory"
+  - Option B: "Insert into an existing .md" — description: "You provide the path to an existing markdown file"
+- Question 2 (`text`): "If inserting into an existing file, provide the path (ignored if creating new):" with default value `README.md`
 
-````markdown
-```mermaid
-<diagram code here>
+Derive a slug from the first 6 meaningful words in the user's original prompt. Skip filler words: `a`, `an`, `the`, `draw`, `create`, `make`, `show`. Convert the remaining words to kebab-case.
+
+Example:
+- "draw a Kafka to Snowflake streaming pipeline" → `kafka-to-snowflake-streaming-pipeline`
+
+Determine paths as follows:
+- `target_dir`: the directory of the existing `.md` path if the user chose Option B, otherwise the current working directory
+- `mmd_path`: `{target_dir}/{slug}.mmd`
+- `svg_path`: `{target_dir}/{slug}.svg`
+- `md_path`: the user-supplied path if the user chose Option B, otherwise `{target_dir}/{slug}.md`
+
+If the user chose Option B, confirm `{md_path}` exists before writing any files. If it does not exist, report the missing path to the user and ask for a corrected one — do not write `.mmd` or run `mmdc`.
+
+Before writing `{mmd_path}`, replace any literal `\n` sequences inside quoted node labels with `<br/>` — `mmdc` renders `\n` as literal text in SVG, while `<br/>` produces a real line break.
+
+Write the corrected Mermaid code to `{mmd_path}` using the Write tool. Write only the raw Mermaid diagram source, not a fenced code block.
+
+Run `mmdc` from `target_dir` using:
+
+```bash
+cd "{target_dir}" && mmdc -i "{slug}.mmd" -o "{slug}.svg"
 ```
-````
 
-Follow with:
-- One sentence explaining what the diagram shows
-- An offer: "Want me to adjust anything? I can also change direction (top-down vs left-right), add/remove components, or annotate edges with more detail."
+If the command exits non-zero, surface the error to the user and stop. Do not proceed to `.md` injection.
+
+Inject the image reference into markdown:
+
+- If the user chose Option A, write a new `{md_path}` containing:
+
+  ```markdown
+  # {Human-readable title — capitalize the slug words}
+
+  ![{slug}](./{slug}.svg)
+  ```
+
+- If the user chose Option B, read the existing file and append the following, ensuring a blank line separates it from the existing content:
+
+  ```markdown
+
+  ## {Human-readable title}
+
+  ![{slug}](./{slug}.svg)
+  ```
+
+Then confirm success to the user with:
+- "Diagram saved as `{slug}.svg` and inserted into `{md_path}`."
+- "`{slug}.mmd` is kept alongside the SVG for future edits."
+- "To update the diagram, re-run `$mermaid-diagram` with your changes."
 
 If the user asks for modifications, treat the updated diagram as a new prompt and re-run the full pipeline (Step 1–5) with the modification request + the current diagram as context.
 
