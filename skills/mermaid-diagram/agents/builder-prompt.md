@@ -417,12 +417,27 @@ with filler and never contort a label to serve the layout. `"provider-owned"` �
 `"provider-owned database"` is a legitimate edit. Raggedness can be reduced this
 way but not eliminated — say so rather than claiming uniform widths.
 
-Exact uniformity is a **post-processing** concern, not something to chase in the
+Width uniformity is a **post-processing** concern, not something to chase in the
 source. `scripts/normalize-boxes.py` rewrites the geometry attributes after
-`mmdc` runs and takes every box to one size (measured: 232 × 78 for all ten nodes,
-a single aspect ratio of 2.97, and 0.00px left-edge spread in both columns). Your
-job is to keep labels close in length so the normalized width is not dominated by
-one outlier; the script handles the rest.
+`mmdc` runs. It equalizes widths **within each cluster and each row**, not across
+the whole diagram, and that limit is real rather than a shortcoming to work
+around: Mermaid has already spent the horizontal space according to the natural
+label widths, so a single global width can only be achieved by pushing nodes
+through their cluster borders and through each other. Measured by forcing one
+264px width — 10 nodes escaping their card and 4 overlapping pairs on a nested
+data-share diagram; 4 escapes and 7 overlaps, the worst at 75.47px, on a
+five-band architecture diagram.
+
+Your job is therefore **still** to keep peer labels close in length, because the
+cap is derived from the room around the *widest* peer: one long outlier inside a
+card both narrows nothing and gains nothing, while a set of peers with similar
+label lengths normalizes cleanly. What you must not do is promise uniform widths
+across an entire nested diagram. Say "uniform within each card" and mean it.
+
+If the pass prints `WARNING <cluster> has room for Npx but its nodes need Mpx`,
+that cluster was too tight to widen and its nodes were left at natural width.
+That is a report, not a failure, and it is expected on dense nested diagrams.
+A `PROBLEM` line is different and is a real defect — report it.
 
 ### Keep subgraph titles short
 

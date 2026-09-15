@@ -24,6 +24,7 @@ Usage:
 """
 
 import argparse
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -155,6 +156,138 @@ def nested_cluster_ids(boxes, tol=0.01):
     return nested
 
 
+def innermost_cluster(node, boxes):
+    """Smallest cluster box whose extent contains the node centre."""
+    best = None
+    for box in boxes:
+        if (box['x'] <= node['cx'] <= box['x'] + box['width']
+                and box['y'] <= node['cy'] <= box['y'] + box['height']):
+            area = box['width'] * box['height']
+            if best is None or area < best[0]:
+                best = (area, box)
+    return best[1] if best else None
+
+
+def assign_target_widths(nodes, boxes, global_half, clusters_will_grow=False,
+                         gap=8.0, y_tol=30.0):
+    """Per-node half-widths that respect the space the layout actually left.
+
+    A single global width is unsafe. Mermaid sizes each cluster and each gap to
+    the natural width of the nodes, so stretching every node to the widest one
+    in the diagram pushes them through cluster borders and through each other.
+    Measured by forcing a single 264px width:
+
+      * nested five-card diagram -- 10 nodes escape their card, and the pair in
+        cards 1 and 2 overlap by 5.91px,
+      * five-band architecture diagram -- 4 nodes escape their band and 7 pairs
+        overlap, by as much as 75.47px.
+
+    Two limits apply, and the smaller wins:
+      * the nearest neighbour sharing a horizontal band, always,
+      * the enclosing cluster, but only when that cluster will keep its current
+        width. In a non-nested diagram the group rects are squared up to contain
+        whatever the nodes end up as, so capping to their pre-pass width would
+        shrink nodes for no reason.
+
+    Nodes are never shrunk below their natural width, because that truncates
+    labels -- a worse defect than the one being fixed. A cluster too tight to
+    hold its children at their natural width is left alone and reported.
+    """
+    warnings = []
+    for n in nodes:
+        n['cluster'] = innermost_cluster(n, boxes)
+
+    # Room to the nearest node sharing a horizontal band.
+    for n in nodes:
+        room = global_half
+        for other in nodes:
+            if other is n or abs(other['cy'] - n['cy']) > y_tol:
+                continue
+            room = min(room, abs(other['cx'] - n['cx']) / 2.0 - gap)
+        n['_neighbour_half'] = room
+
+    by_cluster = {}
+    for n in nodes:
+        by_cluster.setdefault(id(n['cluster']) if n['cluster'] else None, []).append(n)
+
+    for members in by_cluster.values():
+        cl = members[0]['cluster']
+        neighbour_cap = min(n['_neighbour_half'] for n in members)
+        needed = max(n['w'] / 2.0 for n in members)
+
+        if cl is None or clusters_will_grow:
+            allowed = min(global_half, neighbour_cap)
+            label = 'row spacing'
+        else:
+            # The margin Mermaid left between this cluster and its children, at
+            # their natural widths. Reusing it keeps the look the renderer
+            # intended instead of inventing a padding value.
+            margin = max(0.0, min(
+                min((n['cx'] - n['w'] / 2.0) - cl['x'],
+                    (cl['x'] + cl['width']) - (n['cx'] + n['w'] / 2.0))
+                for n in members
+            ))
+            allowed = min(
+                min(n['cx'] - cl['x'], (cl['x'] + cl['width']) - n['cx']) - margin
+                for n in members
+            )
+            allowed = min(allowed, global_half, neighbour_cap)
+            label = f"cluster {cl['id']}"
+
+        # Tolerance, or a cluster sized exactly to its children reports itself
+        # as too small on every re-run through floating point alone.
+        if allowed < needed - 0.05:
+            warnings.append(
+                f'{label} has room for {allowed * 2:.2f}px but its nodes need '
+                f'{needed * 2:.2f}px; left at natural width'
+            )
+            for n in members:
+                n['half'] = n['w'] / 2.0
+        else:
+            for n in members:
+                n['half'] = allowed
+
+    for n in nodes:
+        # Quantize so the value survives the write/read round trip. The rect is
+        # emitted with %.6g, so an unrounded half would come back a digit short
+        # on the next run (-53.4141 read back as -53.414) and the pass would not
+        # be byte identical. Rounding here makes width exactly twice half, both
+        # representable, so a second pass is a no-op.
+        n['half'] = round(n['half'], 3)
+        n['target_w'] = n['half'] * 2.0
+        del n['_neighbour_half']
+    return warnings
+
+
+def containment_report(svg, boxes_fn):
+    """Every cluster must contain its children; no two peers may overlap."""
+    problems = []
+    boxes = boxes_fn(svg)
+    nodes = collect_nodes(svg)
+    for n in nodes:
+        cl = innermost_cluster(n, boxes)
+        if cl is None:
+            continue
+        left, right = n['cx'] - n['w'] / 2.0, n['cx'] + n['w'] / 2.0
+        if left < cl['x'] - 0.5 or right > cl['x'] + cl['width'] + 0.5:
+            problems.append(
+                f"node {n['name']} ({left:.2f}..{right:.2f}) escapes cluster "
+                f"{cl['id']} ({cl['x']:.2f}..{cl['x'] + cl['width']:.2f})"
+            )
+    for i, a in enumerate(nodes):
+        for b in nodes[i + 1:]:
+            if abs(a['cy'] - b['cy']) > 30.0:
+                continue
+            ar, bl = a['cx'] + a['w'] / 2.0, b['cx'] - b['w'] / 2.0
+            al, br = a['cx'] - a['w'] / 2.0, b['cx'] + b['w'] / 2.0
+            if min(ar, br) - max(al, bl) > 0.5:
+                problems.append(
+                    f"nodes {a['name']} and {b['name']} overlap horizontally by "
+                    f"{min(ar, br) - max(al, bl):.2f}px"
+                )
+    return problems
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('svg')
@@ -180,13 +313,24 @@ def main():
             return 2
         return 0
 
-    target_w = max(n['w'] for n in nodes)
-    if len({n['w'] for n in nodes}) > 1:
-        # Round up to an even number with a little breathing room. Skipped when
-        # the widths already agree, so re-running the pass is idempotent rather
-        # than inflating every box by 4px each time.
-        target_w = float(int(target_w) + (int(target_w) % 2) + 4)
+    # Round up to an even number. Deliberately no additive breathing room: with
+    # per-node widths the tiers never collapse to a single value, so an additive
+    # bump would fire on every run and inflate the widest node by 4px each time
+    # (measured 260 -> 264 -> 268). Rounding up is idempotent because an even
+    # number rounds to itself.
+    target_w = math.ceil(max(n['w'] for n in nodes))
+    target_w = float(target_w + target_w % 2)
     half = target_w / 2.0
+
+    # Per-node widths, capped by the room the layout actually left. Measured
+    # before any rewriting, so the cluster geometry and the natural node widths
+    # are both Mermaid's own. Whether the group rects are about to be squared up
+    # decides if their current width is a real constraint.
+    _boxes = collect_cluster_boxes(svg)
+    width_warnings = assign_target_widths(
+        nodes, _boxes, half,
+        clusters_will_grow=not nested_cluster_ids(_boxes),
+    )
 
     # Only reposition nodes that no edge terminates on.
     endpoints = edge_endpoints(svg)
@@ -210,7 +354,10 @@ def main():
         s, e = n['span']
         block = svg[s:e]
         block = RECT_ATTR_RE.sub(
-            lambda m: f'{m.group("key")}="{-half if m.group("key") == "x" else target_w}"',
+            lambda m, n=n: (
+                f'{m.group("key")}='
+                f'"{-n["half"] if m.group("key") == "x" else n["target_w"]:.6g}"'
+            ),
             block,
         )
         if n['name'] in moves:
@@ -227,8 +374,8 @@ def main():
         svg = svg[:s] + block + svg[e:]
 
     # Square up the group rects and re-centre their titles.
-    left = min(n['new_cx'] for n in nodes) - half - args.pad
-    right = max(n['new_cx'] for n in nodes) + half + args.pad
+    left = min(n['new_cx'] - n['half'] for n in nodes) - args.pad
+    right = max(n['new_cx'] + n['half'] for n in nodes) + args.pad
     cl_w, cl_x = right - left, left
 
     cluster_boxes = collect_cluster_boxes(svg)
@@ -292,9 +439,14 @@ def main():
         if skipped:
             summary += f' ({skipped} left alone, side by side)'
 
-    print(f'normalize-boxes: {len(nodes)} nodes -> width {target_w:g}, '
+    widths = sorted({n['target_w'] for n in nodes})
+    width_desc = (f'width {widths[0]:g}' if len(widths) == 1
+                  else f'widths {widths[0]:g}..{widths[-1]:g} ({len(widths)} tiers)')
+    print(f'normalize-boxes: {len(nodes)} nodes -> {width_desc}, '
           f'{len(moves)} repositioned, {summary}'
           + (f' -> x {cl_x:.2f} width {cl_w:.2f}' if widened else ''))
+    for w in width_warnings:
+        print(f'normalize-boxes: WARNING {w}')
     # Widening a group can push its border outside the viewBox mmdc computed from the
     # pre-normalization geometry, which silently clips the left and right edge of every
     # stacked band. Measured on a five-band Snowflake architecture diagram: groups
@@ -320,6 +472,15 @@ def main():
                     svg = svg.replace(mw.group(0), f'max-width: {new_w:.5f}px', 1)
                 print(f'normalize-boxes: viewBox grown to contain widened groups '
                       f'-> x {new_x:.2f} width {new_w:.2f}')
+
+    # Verify the invariant the per-node capping exists to protect, rather than
+    # trusting that it held. A tspan or attribute scan is not enough for this
+    # class of defect -- broken geometry still parses cleanly.
+    problems = containment_report(svg, collect_cluster_boxes)
+    for p in problems:
+        print(f'normalize-boxes: PROBLEM {p}')
+    if problems:
+        print(f'normalize-boxes: {len(problems)} containment problem(s) remain')
 
     changed = svg != original_svg
     if args.dry_run:

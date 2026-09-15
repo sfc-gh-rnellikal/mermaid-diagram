@@ -559,6 +559,48 @@ five-band diagram whose groups were widened to x -13.71 width 1552.95 against a
 viewBox of 0 .. 1487.78. The `max-width` that `mmdc` writes beside the viewBox is
 kept in sync. Nothing is ever shrunk, so a diagram that already fits is untouched.
 
+**Node widths are capped by the room the layout actually left — they are not all
+set to one global value.** Mermaid sizes every cluster and every gap to the
+*natural* width of the nodes, so stretching each node to the widest node in the
+diagram drives them straight through cluster borders and through each other.
+Measured by forcing a single 264px width:
+
+| diagram | nodes escaping their cluster | overlapping node pairs |
+|---|---|---|
+| five-card nested data-share | 10 | 4 (up to 5.91px) |
+| five-band architecture | 4 | 7 (up to **75.47px**) |
+
+The visible symptom is a container that looks smaller than its contents — a white
+card whose two boxes hang over both edges by 43.6px each side. Two limits now
+apply per node and the smaller wins: the nearest neighbour sharing a horizontal
+band, and the enclosing cluster. The cluster limit is applied only when that
+cluster will keep its width; in a non-nested diagram the group rects are squared
+up afterwards to contain whatever the nodes become, so capping to their pre-pass
+width would shrink nodes for nothing.
+
+**A node is never shrunk below its natural width**, because that truncates
+labels — a worse defect than the one being fixed. Where a cluster or a row is too
+tight to hold its nodes even at natural width, that group is left alone and the
+pass prints `WARNING <cluster> has room for Npx but its nodes need Mpx`. Expect
+a handful of these on dense nested diagrams; they are reports, not failures.
+
+The consequence to state plainly when showing a diagram: widths are uniform
+**within** a cluster or row, not across the whole diagram, because dagre already
+spent the horizontal space. Uniformity across the diagram was never geometrically
+available — the old single width only appeared to deliver it by overlapping.
+
+**Growing the clusters instead does not work.** It is the intuitive fix and it is
+measured dead: grown to contain their 264px children, sibling cards `Card 1` and
+`Card 2` overlap by 25.91px, and the nodes inside them already overlap by 5.91px.
+Post-processing cannot reflow dagre, so no amount of container growth separates
+them. Do not retry this direction.
+
+The pass verifies its own invariant after rewriting and prints
+`PROBLEM node X escapes cluster Y` or `PROBLEM nodes X and Y overlap` if any
+remain. Treat any `PROBLEM` line as a real defect. Note that an attribute or
+tspan scan will **not** catch this class of bug on its own — broken geometry
+still parses cleanly — so confirm with a raster too.
+
 **Groups that sit side by side are left alone.** Sibling subgraphs on the same
 rank share a vertical band; giving them a common x and width slams them on top of
 each other and one border disappears completely, so the two groups read as one.
