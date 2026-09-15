@@ -26,6 +26,7 @@ Usage:
 import argparse
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 NODE_RE = re.compile(
     r'(<g class="node[^"]*" id="flowchart-(?P<name>[^-]+)-\d+"[^>]*'
@@ -42,6 +43,20 @@ CLUSTER_RE = re.compile(
     re.S,
 )
 EDGE_PT_RE = re.compile(r'<path[^>]*class="[^"]*flowchart-link[^"]*"[^>]*d="([^"]+)"')
+TRANSLATE_RE = re.compile(r'translate\(\s*([-\d.]+)(?:[ ,]+([-\d.]+))?\s*\)')
+
+
+def tag_name(tag):
+    return tag.rsplit('}', 1)[-1]
+
+
+def translate_xy(transform):
+    if not transform:
+        return 0.0, 0.0
+    m = TRANSLATE_RE.search(transform)
+    if not m:
+        return 0.0, 0.0
+    return float(m.group(1)), float(m.group(2) or 0.0)
 
 
 def edge_endpoints(svg):
@@ -87,6 +102,59 @@ def group_columns(nodes, tol=60.0):
     return cols
 
 
+def collect_cluster_boxes(svg):
+    """Cluster rects in absolute SVG coordinates."""
+    root = ET.fromstring(svg)
+    boxes = []
+
+    def walk(elem, dx=0.0, dy=0.0):
+        tx, ty = translate_xy(elem.get('transform'))
+        abs_dx, abs_dy = dx + tx, dy + ty
+
+        if tag_name(elem.tag) == 'g' and 'cluster' in (elem.get('class') or '').split():
+            rect = next((child for child in elem if tag_name(child.tag) == 'rect'), None)
+            if rect is not None:
+                boxes.append(
+                    {
+                        'id': elem.get('id'),
+                        'x': float(rect.get('x', '0')) + abs_dx,
+                        'y': float(rect.get('y', '0')) + abs_dy,
+                        'width': float(rect.get('width', '0')),
+                        'height': float(rect.get('height', '0')),
+                    }
+                )
+
+        for child in elem:
+            walk(child, abs_dx, abs_dy)
+
+    walk(root)
+    return boxes
+
+
+def nested_cluster_ids(boxes, tol=0.01):
+    nested = set()
+    for box in boxes:
+        x1 = box['x']
+        y1 = box['y']
+        x2 = x1 + box['width']
+        y2 = y1 + box['height']
+        for other in boxes:
+            if other['id'] == box['id']:
+                continue
+            ox1 = other['x']
+            oy1 = other['y']
+            ox2 = ox1 + other['width']
+            oy2 = oy1 + other['height']
+            contains = ox1 <= x1 + tol and oy1 <= y1 + tol and ox2 >= x2 - tol and oy2 >= y2 - tol
+            strictly_larger = (
+                ox1 < x1 - tol or oy1 < y1 - tol or ox2 > x2 + tol or oy2 > y2 + tol
+            )
+            if contains and strictly_larger:
+                nested.add(box['id'])
+                break
+    return nested
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('svg')
@@ -97,13 +165,19 @@ def main():
                          'the diagram has clean, well-separated columns; column '
                          'detection is by x-proximity and can merge distinct '
                          'columns in wide multi-column graphs.')
+    ap.add_argument('--strict', action='store_true',
+                    help='exit non-zero when the pass would leave the SVG unchanged')
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
 
-    svg = open(args.svg, encoding='utf-8').read()
+    original_svg = open(args.svg, encoding='utf-8').read()
+    svg = original_svg
     nodes = collect_nodes(svg)
     if not nodes:
         print('normalize-boxes: no flowchart nodes found; nothing to do')
+        if args.strict:
+            print('normalize-boxes: --strict, exiting 2 because the SVG was unchanged')
+            return 2
         return 0
 
     target_w = max(n['w'] for n in nodes)
@@ -157,24 +231,22 @@ def main():
     right = max(n['new_cx'] for n in nodes) + half + args.pad
     cl_w, cl_x = right - left, left
 
+    cluster_boxes = collect_cluster_boxes(svg)
+    nested_ids = nested_cluster_ids(cluster_boxes)
+
     # Groups that are alone in their vertical band. Sibling groups laid out side
     # by side share a y range, and giving them a common x and width would slam
     # them on top of each other -- they would render as a single box with one
     # border hidden entirely. Keyed by id, because siblings can have byte
     # identical y and height and so cannot be told apart by geometry alone.
-    boxes = [
-        (
-            m.group('id'),
-            float(re.search(r'\by="([-\d.]+)"', m.group('rattrs')).group(1)),
-            float(re.search(r'\bheight="([-\d.]+)"', m.group('rattrs')).group(1)),
-        )
-        for m in CLUSTER_RE.finditer(svg)
-    ]
     solo_ids = {
-        cid
-        for cid, y, h in boxes
+        box['id']
+        for box in cluster_boxes
         if not any(
-            oid != cid and y < oy + oh and oy < y + h for oid, oy, oh in boxes
+            other['id'] != box['id']
+            and box['y'] < other['y'] + other['height']
+            and other['y'] < box['y'] + box['height']
+            for other in cluster_boxes
         )
     }
 
@@ -184,7 +256,7 @@ def main():
         old_x = float(re.search(r'\bx="([-\d.]+)"', m.group('rattrs')).group(1))
         old_w = float(re.search(r'\bwidth="([-\d.]+)"', m.group('rattrs')).group(1))
 
-        if m.group('id') not in solo_ids:
+        if nested_ids or m.group('id') not in solo_ids:
             return m.group(0)
 
         widened.append(m.group('id'))
@@ -213,18 +285,28 @@ def main():
     # match count would claim a merge that did not happen -- and would equally
     # hide one that did.
     skipped = n_matched - len(widened)
-    summary = f'{len(widened)} of {n_matched} groups widened'
-    if skipped:
-        summary += f' ({skipped} left alone, side by side)'
+    if nested_ids:
+        summary = f'cluster normalization skipped for nested diagram ({n_matched} clusters skipped)'
+    else:
+        summary = f'{len(widened)} of {n_matched} groups widened'
+        if skipped:
+            summary += f' ({skipped} left alone, side by side)'
 
     print(f'normalize-boxes: {len(nodes)} nodes -> width {target_w:g}, '
           f'{len(moves)} repositioned, {summary}'
           + (f' -> x {cl_x:.2f} width {cl_w:.2f}' if widened else ''))
+    changed = svg != original_svg
     if args.dry_run:
         print('normalize-boxes: --dry-run, file not written')
+        if args.strict and not changed:
+            print('normalize-boxes: --strict, exiting 2 because the SVG was unchanged')
+            return 2
         return 0
 
     open(args.svg, 'w', encoding='utf-8').write(svg)
+    if args.strict and not changed:
+        print('normalize-boxes: --strict, exiting 2 because the SVG was unchanged')
+        return 2
     return 0
 
 

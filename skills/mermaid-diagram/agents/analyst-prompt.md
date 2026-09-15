@@ -58,6 +58,8 @@ Default to `TD` when uncertain.
 
 **Keep groupings to 2–4 components each.** Nodes inside a group stack vertically in the render — Mermaid ignores a subgraph's inner direction as soon as any edge crosses its boundary, which is true of every connected stage. So each component you add to a group adds height. If a stage genuinely has 6+ components, either split it into two groupings or drop the incidental ones, and note the choice in `notes`.
 
+**REPLICATE mode exception.** If the task is REPLICATE rather than GENERATE, do not apply either normalization rule above. Preserve the source's own structure and direction instead of forcing `TD`; do not drop or split out nodes just because a group is numerous; and preserve the source's nesting depth instead of flattening it. State this plainly in `notes` if needed. The reason is faithful reproduction: normalizing the layout here would distort the source before the Builder ever sees it.
+
 ---
 
 ## Extraction Rules

@@ -254,9 +254,20 @@ flowchart TB
 
 Never emit a `flowchart LR` with 4 or more subgraphs.
 
+**REPLICATE mode exception.** Suspend that rule in REPLICATE mode. If the source diagram uses `flowchart LR` with 4 or more subgraphs, preserve it. Nested subgraphs are also permitted in REPLICATE mode to whatever depth the source exhibits, even though GENERATE mode should still avoid nesting unless the brief requires it for correctness. The goal in REPLICATE is faithful reproduction, not readability normalization.
+
+When REPLICATE mode forces a physical Mermaid limitation or substitution, do not attempt it silently and do not fake success. Record each such case in the substitution ledger. At minimum, account for these cases when they occur:
+- At 3 or more nesting levels, `direction LR` is ignored, so sibling sub-boxes stack vertically instead of side by side.
+- Mermaid's shape library and this skill's icon set do not include AWS, Azure, or other cloud-provider logos, so use a generic icon or a text label instead.
+- A node can carry only one icon, so a source box that shows two icons cannot be reproduced as-is.
+
+Also report, but do not treat as a substitution to solve, that a cluster label overlaps its first child by roughly 13px at every nesting level and Mermaid provides no configurable margin for it.
+
 ### `direction` inside a subgraph is usually ignored — do not rely on it
 
 **One edge crossing a subgraph boundary disables `direction` inside that subgraph.** This holds for node-to-node edges, not just edges drawn to a subgraph ID. Since every stage in a real pipeline connects to the next, inner `direction` is inert in practically every diagram you will build.
+
+In REPLICATE mode, this is a renderer limitation to disclose rather than a reason to flatten the source structure. Preserve the nesting the source showed, and log the stacked-siblings substitution in the ledger when this behaviour changes the layout.
 
 Verified with a controlled pair:
 
