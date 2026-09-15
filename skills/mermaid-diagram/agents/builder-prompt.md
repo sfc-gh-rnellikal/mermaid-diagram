@@ -453,16 +453,40 @@ tag is not parsed — `<small>` appears in the render as the literal characters
 
 Two further consequences of titles being SVG text, both measured:
 
-- **A wrapped title's second line renders behind the first child box** (the
-  ~13px cluster-label overlap), so anything on line 2 is effectively invisible.
-  If a title must carry a discriminator such as a customer number, put it
-  **first** so it survives on line 1: prefer
-  `"Customer 1 - CX Managed Snowflake Account"` over
-  `"CX Managed Snowflake Account for Customer 1"`, which renders as
-  `CX ManagedSnowflake` with the customer number hidden.
+- **A wrapped title's second line collides with the first child box unless you
+  reserve room for it.** Mermaid allocates the height of a *single* title line,
+  so line 2 lands on top of the first child node, and the child box in turn sits
+  on the cluster's top border. Rendered, that reads as the arrows and boxes
+  merging into the border. **`flowchart.subGraphTitleMargin` fixes it** — set it
+  in the frontmatter of every diagram that uses subgraphs:
+
+  ```
+  ---
+  config:
+    flowchart:
+      curve: stepAfter
+      subGraphTitleMargin:
+        top: 4
+        bottom: 24
+  ---
+  ```
+
+  Measured on a 12-cluster nested diagram with three wrapping titles: `bottom`
+  of 8, 16 and 24 all take effect (total canvas height 1266 → 1278 → 1286 →
+  1294), and **24 is the smallest value that fully clears a two-line title**.
+  The cost is negligible — 28px of height on a 1266px canvas — because the
+  margin only consumes space where a title actually needs it, so set it
+  unconditionally rather than trying to predict which titles will wrap.
+  With it set, wrapped titles are legible and titles no longer have to be kept
+  to one line.
 - **Wrapping drops the space at the wrap point** — `CX ManagedSnowflake`,
   `Share(same cloud`. Meaning survives, so report it rather than contorting the
-  title, but it is another reason to keep titles on one line.
+  title.
+
+**Do not trust a tspan scan to tell you a title is intact.** A colliding line 2
+is present in the SVG, merely painted underneath the child box, so parsing the
+markup reports the title as complete. Only a raster shows the defect. Rasterize
+and look before claiming titles are clean.
 
 ### Snowflake brand icons — only when supplied
 

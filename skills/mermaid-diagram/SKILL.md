@@ -640,6 +640,30 @@ edge that changes rank and moves sideways gets a mid-flight waypoint and costs t
 bends. Reducing it further is structural, not styling. `layout: elk` is measured
 worse. Full measurements and the reasoning in `agents/builder-prompt.md`.
 
+### Subgraph title margin check — before rendering
+
+Confirm the `.mmd` frontmatter sets `subGraphTitleMargin` for any diagram that
+uses subgraphs:
+
+```
+config:
+  flowchart:
+    subGraphTitleMargin:
+      top: 4
+      bottom: 24
+```
+
+Mermaid reserves the height of one title line. A title that wraps therefore
+drops its second line onto the first child node, and that child box lands on the
+cluster's top border — which renders as arrows and boxes merging into the border.
+Measured on a 12-cluster diagram: `bottom: 24` is the smallest value that fully
+clears a two-line title, and it costs 28px on a 1266px canvas. Set it
+unconditionally; do not try to predict which titles will wrap.
+
+A tspan scan will **not** catch this defect. The colliding line is present in the
+markup, just painted under the child box, so parsing reports the title as
+complete. Rasterize and look.
+
 ### Aspect ratio check and legibility guard
 
 Exported SVGs carry `width="100%"` and scale to their container, so an over-wide diagram shrinks its own text into illegibility. Verify the rendered aspect ratio before injecting:
@@ -687,7 +711,7 @@ At minimum, capture these entries when they apply:
 2. generic icons or text labels instead of cloud-provider logos
 3. a single icon instead of a source node that carried two icons
 
-Do not use the ledger for renderer defects such as the roughly 13px cluster-label overlap. Those belong in the legibility guard report.
+Do not use the ledger for renderer defects. Those belong in the legibility guard report. Note that the cluster-label collision is **not** a renderer defect to be reported — it is fixed by `subGraphTitleMargin`, see the subgraph title margin check.
 
 ### Reconciliation — required in REPLICATE mode
 
