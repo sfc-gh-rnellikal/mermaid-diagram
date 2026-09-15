@@ -210,6 +210,42 @@ title: <Diagram Title>
 ---
 ```
 
+### Edge routing — use `curve: step` for architecture diagrams
+
+**Always set `curve: step` in the frontmatter config for architecture, platform,
+and infrastructure diagrams.** It produces orthogonal (right-angle elbow) edges —
+the routing every hand-drawn architecture diagram uses, and what draw.io, Visio
+and Lucidchart produce by default.
+
+```
+---
+config:
+  flowchart:
+    curve: step
+---
+```
+
+Measured on a 26-edge nested architecture diagram, counting the fraction of edge
+segments that are axis-aligned (perfectly horizontal or vertical):
+
+| `curve` | Axis-aligned segments | Reads as |
+|---|---|---|
+| `step`, `stepBefore`, `stepAfter` | **100%** | clean right-angle elbows |
+| `linear` | 84% | **zig-zag** — the diagonal 16% is what looks wrong |
+| `basis` (Mermaid's DEFAULT) | 80% | loose curves, wandering |
+
+The failure mode to avoid is `linear`. It looks like it should give straight
+lines, and mostly does, but the minority of diagonal segments cut across the
+diagram at arbitrary angles and read as zig-zag — users notice this immediately
+and describe it exactly that way. Leaving `curve` unset is also wrong: the
+default is `basis`, which is curved.
+
+`step` bends at the midpoint between nodes; `stepBefore` and `stepAfter` turn
+early and late respectively. All three are fully orthogonal, so prefer `step`
+unless a specific diagram reads better with one of the others. Setting `curve`
+does not change node placement, canvas size, or aspect ratio — only the edge
+paths — so it is safe to apply late without re-checking layout.
+
 - Use `<small>` for secondary detail in node labels, for example `Topic["Kafka Topic<br/><small>partitioned</small>"]`
 - Use dashed edges `-.->` for side-channel, monitoring, validation, or annotation paths
 - Use no more than 5 subgraphs in a single diagram

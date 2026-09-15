@@ -624,6 +624,15 @@ grep -c 'href="/' "{target_dir}/{slug}.svg"
 
 This must print `0`. If it prints anything else, an `img:` path was wrong — the icons will render broken. Fix the path in `{slug}.mmd`, re-run `mmdc`, and re-run the inliner before continuing.
 
+### Edge routing check — before rendering
+
+Confirm the `.mmd` frontmatter sets `curve: step` for any architecture, platform,
+or infrastructure diagram. It gives orthogonal right-angle edges (measured 100%
+axis-aligned segments); `linear` gives 84% and the diagonal remainder reads as
+zig-zag, while Mermaid's unset default `basis` gives loose curves. If it is
+missing, add it and re-render — it changes only edge paths, never node placement
+or aspect ratio. Full measurements in `agents/builder-prompt.md`.
+
 ### Aspect ratio check and legibility guard
 
 Exported SVGs carry `width="100%"` and scale to their container, so an over-wide diagram shrinks its own text into illegibility. Verify the rendered aspect ratio before injecting:
