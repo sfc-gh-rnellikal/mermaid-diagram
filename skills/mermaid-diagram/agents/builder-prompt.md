@@ -379,8 +379,26 @@ In a stacked layout, prefix each subgraph label with its stage number so the rea
 **Never use HTML entities in a label.** `&nbsp;` does not survive
 `htmlLabels: false` — it renders as the literal string `&nbsp;`, and it also
 consumes about seven characters of the title width budget, causing titles to
-wrap that would otherwise fit. `<br/>` and `<small>` are safe: both degrade
-gracefully when HTML labels are off.
+wrap that would otherwise fit.
+
+**`<small>` is safe in a node label but NOT in a subgraph title.** Node labels
+are emitted as a `foreignObject` containing real HTML, so tags work. Subgraph
+titles are emitted as plain SVG `<text>` split into per-word `<tspan>`s, so a
+tag is not parsed — `<small>` appears in the render as the literal characters
+`<small>`. Use `<small>` only inside node labels. Measured.
+
+Two further consequences of titles being SVG text, both measured:
+
+- **A wrapped title's second line renders behind the first child box** (the
+  ~13px cluster-label overlap), so anything on line 2 is effectively invisible.
+  If a title must carry a discriminator such as a customer number, put it
+  **first** so it survives on line 1: prefer
+  `"Customer 1 - CX Managed Snowflake Account"` over
+  `"CX Managed Snowflake Account for Customer 1"`, which renders as
+  `CX ManagedSnowflake` with the customer number hidden.
+- **Wrapping drops the space at the wrap point** — `CX ManagedSnowflake`,
+  `Share(same cloud`. Meaning survives, so report it rather than contorting the
+  title, but it is another reason to keep titles on one line.
 
 ### Snowflake brand icons — only when supplied
 
