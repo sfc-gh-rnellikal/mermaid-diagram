@@ -295,6 +295,32 @@ def main():
     print(f'normalize-boxes: {len(nodes)} nodes -> width {target_w:g}, '
           f'{len(moves)} repositioned, {summary}'
           + (f' -> x {cl_x:.2f} width {cl_w:.2f}' if widened else ''))
+    # Widening a group can push its border outside the viewBox mmdc computed from the
+    # pre-normalization geometry, which silently clips the left and right edge of every
+    # stacked band. Measured on a five-band Snowflake architecture diagram: groups
+    # widened to x -13.71 width 1552.95 against a viewBox of 0 .. 1487.78, clipping
+    # 13.71px on the left and 51.45px on the right. Grow the viewBox -- and the px
+    # max-width mmdc writes beside it -- to contain the new extent.
+    if widened:
+        vb = re.search(r'viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"', svg)
+        if vb:
+            vx, vy, vw, vh = (float(g) for g in vb.groups())
+            pad = 10.0
+            new_x = min(vx, cl_x - pad)
+            new_r = max(vx + vw, cl_x + cl_w + pad)
+            if new_x < vx or new_r > vx + vw:
+                new_w = new_r - new_x
+                svg = svg.replace(
+                    vb.group(0),
+                    f'viewBox="{new_x:.5f} {vy:g} {new_w:.5f} {vh:g}"',
+                    1,
+                )
+                mw = re.search(r'max-width:\s*([\d.]+)px', svg)
+                if mw:
+                    svg = svg.replace(mw.group(0), f'max-width: {new_w:.5f}px', 1)
+                print(f'normalize-boxes: viewBox grown to contain widened groups '
+                      f'-> x {new_x:.2f} width {new_w:.2f}')
+
     changed = svg != original_svg
     if args.dry_run:
         print('normalize-boxes: --dry-run, file not written')

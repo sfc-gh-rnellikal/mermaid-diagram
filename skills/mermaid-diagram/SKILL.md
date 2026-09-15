@@ -551,6 +551,14 @@ nested diagrams it reports the cluster pass as skipped instead of pretending it
 ran. The pass is idempotent and works on both the default HTML-label path and
 `htmlLabels: false`.
 
+It also **grows the SVG viewBox when widening pushes a group border past the
+canvas edge.** `mmdc` sizes the viewBox from the pre-normalization geometry, so
+without this the left and right borders of every stacked band are silently
+clipped — measured at 13.71px lost on the left and 51.45px on the right of a
+five-band diagram whose groups were widened to x -13.71 width 1552.95 against a
+viewBox of 0 .. 1487.78. The `max-width` that `mmdc` writes beside the viewBox is
+kept in sync. Nothing is ever shrunk, so a diagram that already fits is untouched.
+
 **Groups that sit side by side are left alone.** Sibling subgraphs on the same
 rank share a vertical band; giving them a common x and width slams them on top of
 each other and one border disappears completely, so the two groups read as one.
