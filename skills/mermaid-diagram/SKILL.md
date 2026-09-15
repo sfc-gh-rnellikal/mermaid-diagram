@@ -626,12 +626,19 @@ This must print `0`. If it prints anything else, an `img:` path was wrong — th
 
 ### Edge routing check — before rendering
 
-Confirm the `.mmd` frontmatter sets `curve: step` for any architecture, platform,
-or infrastructure diagram. It gives orthogonal right-angle edges (measured 100%
-axis-aligned segments); `linear` gives 84% and the diagonal remainder reads as
-zig-zag, while Mermaid's unset default `basis` gives loose curves. If it is
-missing, add it and re-render — it changes only edge paths, never node placement
-or aspect ratio. Full measurements in `agents/builder-prompt.md`.
+Confirm the `.mmd` frontmatter sets `curve: stepAfter` for any architecture,
+platform, or infrastructure diagram. All three `step` variants give orthogonal
+right-angle edges (measured 100% axis-aligned segments), but they differ sharply
+in bend count: `stepAfter` 18 total bends, `stepBefore` 21, `step` 39 — `step`
+never manages fewer than 3 per turning edge. `linear` is 84% axis-aligned and the
+diagonal remainder reads as zig-zag; Mermaid's unset default `basis` gives loose
+curves. If it is missing or set to anything else, fix it and re-render — it
+changes only edge paths, never node placement or aspect ratio.
+
+**Do not promise one bend per edge.** Bend count is dagre's, not the curve's: an
+edge that changes rank and moves sideways gets a mid-flight waypoint and costs two
+bends. Reducing it further is structural, not styling. `layout: elk` is measured
+worse. Full measurements and the reasoning in `agents/builder-prompt.md`.
 
 ### Aspect ratio check and legibility guard
 

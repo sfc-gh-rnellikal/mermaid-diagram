@@ -210,23 +210,24 @@ title: <Diagram Title>
 ---
 ```
 
-### Edge routing — use `curve: step` for architecture diagrams
+### Edge routing — use `curve: stepAfter` for architecture diagrams
 
-**Always set `curve: step` in the frontmatter config for architecture, platform,
-and infrastructure diagrams.** It produces orthogonal (right-angle elbow) edges —
-the routing every hand-drawn architecture diagram uses, and what draw.io, Visio
-and Lucidchart produce by default.
+**Always set `curve: stepAfter` in the frontmatter config for architecture,
+platform, and infrastructure diagrams.** It produces orthogonal (right-angle
+elbow) edges — the routing every hand-drawn architecture diagram uses, and what
+draw.io, Visio and Lucidchart produce by default — with the **fewest bends** of
+any option.
 
 ```
 ---
 config:
   flowchart:
-    curve: step
+    curve: stepAfter
 ---
 ```
 
-Measured on a 26-edge nested architecture diagram, counting the fraction of edge
-segments that are axis-aligned (perfectly horizontal or vertical):
+Measured on the same 26-edge nested architecture diagram. First, the fraction of
+edge segments that are axis-aligned (perfectly horizontal or vertical):
 
 | `curve` | Axis-aligned segments | Reads as |
 |---|---|---|
@@ -234,17 +235,44 @@ segments that are axis-aligned (perfectly horizontal or vertical):
 | `linear` | 84% | **zig-zag** — the diagonal 16% is what looks wrong |
 | `basis` (Mermaid's DEFAULT) | 80% | loose curves, wandering |
 
+Being orthogonal is necessary but not sufficient — the three `step` variants
+differ sharply in how many **bends** they spend, counted as direction changes
+per edge:
+
+| `curve` | Total bends | Bends per edge |
+|---|---|---|
+| **`stepAfter`** | **18** | `{0:15, 1:6, 2:3, 3:2}` |
+| `stepBefore` | 21 | `{0:15, 1:3, 2:6, 3:2}` |
+| `step` | 39 | `{0:15, 3:9, 6:2}` — **never fewer than 3** |
+
+`step` breaks at the midpoint between nodes, which costs at least three
+direction changes on every turning edge and reads as a staircase. `stepAfter`
+turns once, late. Prefer it always; the only reason to reach for `stepBefore` is
+if a specific diagram reads better turning early.
+
 The failure mode to avoid is `linear`. It looks like it should give straight
 lines, and mostly does, but the minority of diagonal segments cut across the
 diagram at arbitrary angles and read as zig-zag — users notice this immediately
 and describe it exactly that way. Leaving `curve` unset is also wrong: the
 default is `basis`, which is curved.
 
-`step` bends at the midpoint between nodes; `stepBefore` and `stepAfter` turn
-early and late respectively. All three are fully orthogonal, so prefer `step`
-unless a specific diagram reads better with one of the others. Setting `curve`
-does not change node placement, canvas size, or aspect ratio — only the edge
-paths — so it is safe to apply late without re-checking layout.
+Setting `curve` does not change node placement, canvas size, or aspect ratio —
+only the edge paths — so it is safe to apply late without re-checking layout.
+
+**You cannot get down to one bend on every edge, so do not promise it.** The
+bend count is set by dagre, not by the curve: dagre inserts a waypoint for every
+rank an edge crosses, and the renderer must draw through all of them. An edge
+that changes rank *and* moves sideways therefore gets a mid-flight waypoint and
+costs two bends, where a human drawing it by hand would use one, because a human
+routes freely and ignores rank structure. Mermaid exposes no per-edge routing
+control. If a specific edge must have fewer bends, that is a **structural**
+change — reduce the ranks it crosses, or bring source and target onto adjacent
+ranks — not a styling one. Say this plainly rather than trying more curve values.
+
+`layout: elk` does **not** help and is measured worse: ELK emits its own
+orthogonal waypoints, so a `step*` curve staircases each one again (80 bends,
+avg 4.21). ELK with `curve: linear` respects its waypoints but still lands at 20
+bends, above `stepAfter`. Not worth the extra renderer dependency.
 
 - Use `<small>` for secondary detail in node labels, for example `Topic["Kafka Topic<br/><small>partitioned</small>"]`
 - Use dashed edges `-.->` for side-channel, monitoring, validation, or annotation paths
